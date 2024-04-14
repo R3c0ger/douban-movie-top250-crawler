@@ -8,7 +8,10 @@
 
 import argparse
 import csv
+import sys
+import tkinter as tk
 from time import sleep
+from tkinter import messagebox
 
 import requests
 from bs4 import BeautifulSoup
@@ -140,6 +143,7 @@ def crawler(csv_path, sleep_time, resume_page, fast_mode):
     print('爬取完成！')
 
 def arg_parser():
+    """命令行参数解析"""
     parser = argparse.ArgumentParser(
         description='Douban Movie Top250 Crawler')
     parser.add_argument('-p', '--path', default='douban_movie.csv',
@@ -155,11 +159,70 @@ def arg_parser():
     parser.add_argument('-f', '--fast', action='store_true',
                         help='Fast mode, get director and actor information '
                              'from the top-250 list page directly')
+    # GUI界面
+    parser.add_argument('-g', '--gui', action='store_true',
+                        help='Use GUI interface')
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s 2.3')
     return parser.parse_args()
 
+def redirect_stdout_to_tkinter(text_widget):
+    class StdoutRedirector:
+        def __init__(self, text_widget):
+            self.text_widget = text_widget
+
+        def write(self, msg):
+            self.text_widget.insert('end', msg)
+            self.text_widget.see('end')
+
+    sys.stdout = StdoutRedirector(text_widget)
+
+def gui():
+    """GUI界面"""
+    def start_crawler():
+        try:
+            crawler(csv_path.get(), int(sleep_time.get()), int(resume_page.get()), fast_mode.get())
+            messagebox.showinfo('提示', '爬取完成！')
+        except Exception as e:
+            messagebox.showerror('错误', f'爬取失败：{e}')
+
+    root = tk.Tk()
+    root.title('豆瓣电影TOP250爬虫  版本：2.3')
+    root.geometry('400x400')
+
+    tk.Label(root, text='保存路径：').pack()
+    csv_path = tk.StringVar()
+    csv_path.set('douban_movie.csv')
+    tk.Entry(root, textvariable=csv_path).pack()
+
+    tk.Label(root, text='请求间隔时间(s)：').pack()
+    sleep_time = tk.StringVar()
+    sleep_time.set('15')
+    tk.Entry(root, textvariable=sleep_time).pack()
+
+    tk.Label(root, text='断点续传页码：（1表示不使用该功能）').pack()
+    resume_page = tk.StringVar()
+    resume_page.set('1')
+    tk.OptionMenu(root, resume_page, *range(1, 11)).pack()
+
+    fast_mode = tk.BooleanVar()
+    tk.Checkbutton(root, text='快速爬取模式', variable=fast_mode).pack()
+
+    tk.Button(root, text='开始爬取', command=start_crawler).pack()
+
+    output = tk.Text(root)
+    output.pack()
+    redirect_stdout_to_tkinter(output)
+
+    root.mainloop()
+
 
 if __name__ == '__main__':
-    args = arg_parser()
-    crawler(args.path, args.sleep, args.resume, args.fast)
+    if len(sys.argv) > 1:
+        cli_args = arg_parser()
+        if cli_args.gui:
+            gui()
+        else:
+            crawler(cli_args.path, cli_args.sleep, cli_args.resume, cli_args.fast)
+    else:
+        gui()
