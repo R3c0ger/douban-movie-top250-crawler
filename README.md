@@ -2,7 +2,7 @@
 
 豆瓣电影 Top 250 爬虫
 
-![version](https://img.shields.io/badge/version-v2.3-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue) ![python](https://img.shields.io/badge/python-3.6+-yellow)
+![version](https://img.shields.io/badge/version-v3.1-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue) ![python](https://img.shields.io/badge/python-3.6+-yellow)
 
 ## Description
 
@@ -27,7 +27,7 @@ This script is used to crawl the movie information of Douban Movie Top-250, incl
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.6+（3.9）
 - requests~=2.31.0
 - beautifulsoup4~=4.12.3
 - lxml~=5.2.1

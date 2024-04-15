@@ -9,6 +9,7 @@
 import argparse
 import csv
 import sys
+import threading
 import tkinter as tk
 from time import sleep
 from tkinter import messagebox
@@ -17,6 +18,8 @@ import requests
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
+
+Version = '3.1'
 
 def get_html(url):
     """
@@ -37,12 +40,13 @@ def get_html(url):
         print("请求失败：", e)
         return None
 
-def parse_html(html, sleep_time, fast_mode):
+def parse_html(html, sleep_time, fast_mode, is_gui=False):
     """
     生成器函数，解析html文本，提取电影信息，返回包含各字段的字典
     :param html: html文本
     :param sleep_time: 请求间隔时间，防止被封IP
     :param fast_mode: 快速爬取选项，直接使用榜单页的信息，而不进入电影链接
+    :param is_gui: 是否使用GUI界面，默认为False
     :return: 包含各字段的字典
     """
     soup = BeautifulSoup(html, 'lxml')
@@ -56,6 +60,8 @@ def parse_html(html, sleep_time, fast_mode):
         movie_link = item.select('.hd a')[0].get('href')
         if not fast_mode:
             items.set_description(f'正在解析当前页中的《{movie_name}》')
+            if is_gui:
+                print(f'\t正在解析当前页中的《{movie_name}》')
 
         # 2. 第二行，导演和主演
         movie_info = item.select('.bd p')[0].get_text().strip().split('\n')
@@ -105,11 +111,15 @@ def parse_html(html, sleep_time, fast_mode):
         }
 
 def write_csv(data, fieldnames, csv_path):
-    with open(csv_path, 'a', newline='', encoding='utf-8-sig') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writerow(data)
+    try:
+        with open(csv_path, 'a', newline='', encoding='utf-8-sig') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writerow(data)
+    except Exception as e:
+        print(f'写入失败：{e}')
+        raise e
 
-def crawler(csv_path, sleep_time, resume_page, fast_mode):
+def crawler(csv_path, sleep_time, resume_page, fast_mode, is_gui=False):
     """爬虫主体函数\n
     经试验，爬取8页时，豆瓣会封IP；假设能顺利爬取10页，则需87分钟左右。
     :param csv_path: 保存csv文件的路径，默认为当前目录下的douban_movie.csv
@@ -117,6 +127,7 @@ def crawler(csv_path, sleep_time, resume_page, fast_mode):
     :param resume_page: “断点续传”功能，从指定页码开始爬取，并将结果追加到csv文件中而非覆盖
                         值等于1表示不使用该功能，值位于[2, 10]之间正常使用该功能
     :param fast_mode: 快速爬取选项，在爬取导演和主演时，直接使用榜单页的信息，而不进入电影链接
+    :param is_gui: 是否使用GUI界面，默认为False
     """
     url = 'https://movie.douban.com/top250'
     fieldnames = ['电影名称', '电影链接', '导演', '主演', '上映时间',
@@ -124,23 +135,27 @@ def crawler(csv_path, sleep_time, resume_page, fast_mode):
 
     if resume_page == 1:
         # 在第一行列出字段名(不使用断点续传功能时)
-        print(f'开始爬取，结果将保存到{csv_path}')
+        print(f'\n开始爬取，结果将保存到{csv_path}\n')
         with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
     else:
-        print(f'从第{resume_page}页开始爬取，结果将追加到{csv_path}中')
+        print(f'\n从第{resume_page}页开始爬取，结果将追加到{csv_path}中\n')
 
     # 每页最多25条，共需爬取10页
     pbar = tqdm(range(resume_page - 1, 10))
     for i in pbar:
         page_url = f'{url}?start={i * 25}&filter='
         pbar.set_description(f'正在爬取第{i + 1}页({page_url})')
+        if is_gui:
+            print(f'正在爬取第{i + 1}页({page_url})')
         html = get_html(page_url)
-        for item in parse_html(html, sleep_time, fast_mode):
+        for item in parse_html(html, sleep_time, fast_mode, is_gui):
             write_csv(item, fieldnames, csv_path)
         sleep(sleep_time)
     print('爬取完成！')
+    if is_gui:
+        messagebox.showinfo('提示', '爬取完成！')
 
 def arg_parser():
     """命令行参数解析"""
@@ -163,7 +178,7 @@ def arg_parser():
     parser.add_argument('-g', '--gui', action='store_true',
                         help='Use GUI interface')
     parser.add_argument('-v', '--version', action='version',
-                        version='%(prog)s 2.3')
+                        version=f'%(prog)s {Version}')
     return parser.parse_args()
 
 def redirect_stdout_to_tkinter(text_widget):
@@ -181,34 +196,46 @@ def gui():
     """GUI界面"""
     def start_crawler():
         try:
-            crawler(csv_path.get(), int(sleep_time.get()), int(resume_page.get()), fast_mode.get())
-            messagebox.showinfo('提示', '爬取完成！')
+            args = (csv_path.get(),
+                    int(sleep_time.get()),
+                    int(resume_page.get()),
+                    fast_mode.get(),
+                    True)
+            thread = threading.Thread(target=crawler, args=args)
+            thread.start()
         except Exception as e:
             messagebox.showerror('错误', f'爬取失败：{e}')
 
     root = tk.Tk()
-    root.title('豆瓣电影TOP250爬虫  版本：2.3')
-    root.geometry('400x400')
+    root.title(f'豆瓣电影TOP250爬虫  版本：{Version}')
+    root.geometry('600x400')
 
-    tk.Label(root, text='保存路径：').pack()
+    path_frame = tk.Frame(root)
+    path_frame.pack(fill='x', padx=20, pady=5)
+    tk.Label(path_frame, text='保存文件的相对路径：').pack(side='left')
     csv_path = tk.StringVar()
     csv_path.set('douban_movie.csv')
-    tk.Entry(root, textvariable=csv_path).pack()
+    tk.Entry(path_frame, textvariable=csv_path).pack(side='left')
 
-    tk.Label(root, text='请求间隔时间(s)：').pack()
+    time_frame = tk.Frame(root)
+    time_frame.pack(fill='x', padx=20, pady=5)
+    tk.Label(time_frame, text='请求间隔时间(s)：').pack(side='left')
     sleep_time = tk.StringVar()
     sleep_time.set('15')
-    tk.Entry(root, textvariable=sleep_time).pack()
+    tk.Entry(time_frame, textvariable=sleep_time).pack(side='left')
 
-    tk.Label(root, text='断点续传页码：（1表示不使用该功能）').pack()
+    resume_frame = tk.Frame(root)
+    resume_frame.pack(fill='x', padx=20, pady=5)
+    tk.Label(resume_frame, text='断点续传页码(1表示不使用该功能)：').pack(side='left')
     resume_page = tk.StringVar()
     resume_page.set('1')
-    tk.OptionMenu(root, resume_page, *range(1, 11)).pack()
+    tk.OptionMenu(resume_frame, resume_page, *range(1, 11)).pack(side='left')
 
+    last_frame = tk.Frame(root)
+    last_frame.pack(fill='x', padx=20, pady=5)
     fast_mode = tk.BooleanVar()
-    tk.Checkbutton(root, text='快速爬取模式', variable=fast_mode).pack()
-
-    tk.Button(root, text='开始爬取', command=start_crawler).pack()
+    tk.Checkbutton(last_frame, text='快速爬取模式', variable=fast_mode).pack(side='left')
+    tk.Button(last_frame, text='开始爬取', command=start_crawler).pack(side='left', padx=20)
 
     output = tk.Text(root)
     output.pack()
